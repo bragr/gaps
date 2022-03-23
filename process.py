@@ -5,7 +5,6 @@ import json
 import logging
 import math
 import os
-from typing import Tuple
 from tqdm import tqdm
 
 DATA_DIR = './data/samples.adsbexchange.com/readsb-hist/2022/03/01'
@@ -47,6 +46,42 @@ class Position(object):
     def __str__(self) -> str:
         return f"Latitude: {self.lat}, Longitude: {self.long}, Altitude: {self.alt}{'' if self.alt == 'ground' else 'ft'}"
 
+
+class Dropout(object):
+    '''Representation of a presumed coverage dropout of a particular flight'''
+    def __init__(self, hex: str, start: Position, end: Position) -> None:
+        self.hex = hex
+        self.start = start
+        self.end = end
+    
+    def asdict(self) -> dict:
+        return {"lat1": self.start.lat, "long1": self.start.long, "alt1": self.start.alt,
+                "lat2": self.end.lat, "long2": self.end.long, "alt2": self.end.alt}
+    
+    def great_circle(self) -> float:
+        lat1 = math.radians(self.start.lat)
+        long1 = math.radians(self.start.long)
+        lat2 = math.radians(self.end.lat)
+        long2 = math.radians(self.end.long)
+
+        if long1 > long2:
+            long_diff = long1 - long2
+        else:
+            long_diff = long2 - long1
+        
+        x = math.sin(lat1) * math.sin(lat2) + math.cos(lat1) * math.cos(lat2) * math.cos(long_diff)
+        if x > 1.0:
+            x = 1.0
+        elif x < -1.0:
+            x = -1.0
+        dist_radians = math.acos(x)
+        return MEAN_EARTH_RADIUS_METERS * dist_radians
+    
+    def __str__(self) -> str:
+        return f"LOS: {self.start}\nAOS: {self.end}\nGreat Circle: {self.great_circle()}m"
+
+
+
 class Flight(object):
     '''Representation of a distinct flight of an aircraft e.g takeoff to landing'''
 
@@ -54,7 +89,7 @@ class Flight(object):
         self.last_position = None
         self.process_update(update, update_time)
 
-    def process_update(self, update: dict, update_time: datetime.datetime) -> Tuple[Position, Position]:
+    def process_update(self, update: dict, update_time: datetime.datetime) -> Dropout:
         if not update.get('lat') or not update.get('lon'):
             return
 
@@ -63,9 +98,8 @@ class Flight(object):
         if last_last_pos:
             update_delta = update_time - last_last_pos.time
             if update_delta >= LAST_POS_DELTA:
-                logging.info(f"LOS/AOS hex: {update['hex']}:\n\tLOS: {last_last_pos}\n\tAOS: {self.last_position}"
-                             f"\n\tGreat Circle: {great_circle(last_last_pos, self.last_position)}m")
-                return (last_last_pos, self.last_position)
+                dropout = Dropout(update['hex'], last_last_pos, self.last_position)
+                return dropout
         return None
 
 
@@ -80,7 +114,7 @@ class Aircraft(object):
         self.current_flight = update.get('flight', self.registration if self.registration else self.hex)
         self.flight = Flight(update, update_time)
 
-    def process_update(self, update: dict, update_time: datetime.datetime) -> Tuple[Position, Position]:
+    def process_update(self, update: dict, update_time: datetime.datetime) -> Dropout:
         if self.registration != update.get('r', self.registration):
             self.registration = update.get('r', self.registration)
 
@@ -132,26 +166,6 @@ class World(object):
                 self.dropouts.append(dropout)
         else:
             self.aircraft[hex] = Aircraft(aircraft_update, update_time)
-
-
-def great_circle(pos1: Position, pos2: Position) -> float:
-    lat1 = math.radians(pos1.lat)
-    long1 = math.radians(pos1.long)
-    lat2 = math.radians(pos2.lat)
-    long2 = math.radians(pos2.long)
-
-    if long1 > long2:
-        long_diff = long1 - long2
-    else:
-        long_diff = long2 - long1
-    
-    x = math.sin(lat1) * math.sin(lat2) + math.cos(lat1) * math.cos(lat2) * math.cos(long_diff)
-    if x > 1.0:
-        x = 1.0
-    elif x < -1.0:
-        x = -1.0
-    dist_radians = math.acos(x)
-    return MEAN_EARTH_RADIUS_METERS * dist_radians
 
 
 def main() -> World:
