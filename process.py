@@ -13,7 +13,7 @@ MILITARY = 0b0001  # military aircraft
 INTERESTING = 0b0010  # ???
 PIA = 0b0100  # Privacy ICAO aircraft address
 LADD = 0b1000  # Limiting Aircraft Data Displayed
-LAST_POS_THRESHOLD = 30.0
+LAST_POS_THRESHOLD = 60.0
 LAST_POS_DELTA = datetime.timedelta(seconds=LAST_POS_THRESHOLD)  # Consider coverage lost if we haven't gotten a position in this period
 MEAN_EARTH_RADIUS_METERS = 6371008.7714  # https://en.wikipedia.org/wiki/Earth_radius#Published_values
 
