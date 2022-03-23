@@ -89,7 +89,7 @@ class Aircraft(object):
 
         if self.current_flight != update.get('flight', self.current_flight):
             self.current_flight = update.get('flight', self.current_flight)
-            self.flights[self.current_flight] = Flight(update, update_time)
+            self.flight = Flight(update, update_time)
             return None
 
         return self.flight.process_update(update, update_time)
