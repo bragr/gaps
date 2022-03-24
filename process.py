@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import os
+from multiprocessing import Process, Queue
 from tqdm import tqdm
 
 DATA_DIR = './data/samples.adsbexchange.com/readsb-hist/2022/03/01'
@@ -15,6 +16,7 @@ LADD = 0b1000  # Limiting Aircraft Data Displayed
 LAST_POS_THRESHOLD = 60.0
 LAST_POS_DELTA = datetime.timedelta(seconds=LAST_POS_THRESHOLD)  # Consider coverage lost if we haven't gotten a position in this period
 MEAN_EARTH_RADIUS_METERS = 6371008.7714  # https://en.wikipedia.org/wiki/Earth_radius#Published_values
+MAX_QUEUE_SIZE = 50
 
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(levelname)s %(message)s')
 
@@ -168,20 +170,33 @@ class World(object):
             self.aircraft[hex] = Aircraft(aircraft_update, update_time)
 
 
-def main() -> World:
-    world = World()
+def load_files(queue: Queue) -> None:
     files = os.listdir(DATA_DIR)
     files = sorted(files)
-
     for file in tqdm(files):
         data_time = datetime.datetime.strptime(file, '%H%M%SZ.json.gz').replace(year=2022, month=3, day=1)
         logging.info(f"Loading data for time {data_time}")
 
         with gzip.open(f'{DATA_DIR}/{file}', 'r') as json_file:
-            data = json.load(json_file)
+            queue.put((json.load(json_file), data_time), block=True)
+    queue.put(None)
+
+def main() -> World:
+    world = World()
+    queue = Queue(MAX_QUEUE_SIZE)
+    p = Process(target=load_files, args=(queue,))
+    p.start()
+
+    while True:
+        data = queue.get(block=True)
+        if not data:
+            break
+        data_time = data[1]
+        logging.info(f"Loading data for time {data_time}")
         
-        for aircraft in data['aircraft']:
+        for aircraft in data[0]['aircraft']:
             world.process_aircraft(aircraft, data_time)
+    p.join()
     
     return world
 
